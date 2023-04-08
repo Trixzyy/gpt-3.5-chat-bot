@@ -11,7 +11,7 @@ const client = new Client({
 });
 
 client.on('ready', () => {
-  console.log('The bot is online!');
+  console.log(`${client.user.username} is online!`);
 });
 
 const configuration = new Configuration({
@@ -19,12 +19,28 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 
+const userConversations = {};
+
+function limitInput(input, maxLength) {
+  return input.slice(0, maxLength);
+}
+
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (message.channel.id !== process.env.CHANNEL_ID) return;
   if (message.content.startsWith('!')) return;
 
-  let conversationLog = [{ role: 'system', content: 'You are a friendly chatbot.' }];
+  const userId = message.author.id;
+  if (!userConversations[userId]) {
+    userConversations[userId] = [
+      {
+        role: 'system',
+        content: `You are a helpful asistant`,
+      },
+    ];
+  }
+
+  let conversationLog = userConversations[userId];
 
   try {
     await message.channel.sendTyping();
@@ -37,20 +53,25 @@ client.on('messageCreate', async (message) => {
       if (msg.author.id !== client.user.id && message.author.bot) return;
       if (msg.author.id !== message.author.id) return;
 
+      let userName = msg.author.username;
       conversationLog.push({
         role: 'user',
-        content: msg.content,
+        content: `You are speaking to ${userName}, this is your conversation history: ` + msg.content ,
       });
     });
+
+    
+    const limitedConversationLog = limitInput(conversationLog, 2000);
 
     const result = await openai
       .createChatCompletion({
         model: 'gpt-3.5-turbo',
-        messages: conversationLog,
-        // max_tokens: 256, // limit token usage
+        messages: limitedConversationLog, 
+        max_tokens: 140, // limit token usage
       })
       .catch((error) => {
         console.log(`OPENAI ERR: ${error}`);
+        message.reply(`Sorry I'm having trouble thinking, try again later?`);
       });
 
     message.reply(result.data.choices[0].message);
